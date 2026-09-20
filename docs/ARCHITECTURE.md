@@ -1,5 +1,23 @@
 # Implemented architecture and extension contract
 
+## Extension contracts
+
+Two distinct ways another program plugs in, which should not be confused:
+
+- **stdio JSON bridge** (`run.py bridge`) — a caller drives this package's core directly,
+  one `{"operation","arguments"}` object in, one result out. Documented below.
+- **jev-bus stage** (`run.py bus-stage`) — this package participates in *another* package's
+  message-transform chain, or carries one of its own. One `jev-bus.stage.v1` object in, one
+  `{ok, messages, notes}` out. Specified in [BUS.md](BUS.md), which is byte-identical in every
+  participating repository.
+
+The bus is additive: where no chain is registered, every adapter performs its own direct
+transform exactly as it did before the bus existed. `paging.prepare()` accordingly accepts an
+optional pristine `original_messages` array and derives snapshot fingerprints and `msg_` keys
+from it, so an upstream stage's edit cannot re-key messages or stale an open plan.
+`paging.can_mutate()` reports Pi and Hermes as prunable only while this package is actually
+registered on the bus for them, since it installs no native transform for either host.
+
 ## Components
 
 `core.py` coordinates a shared SQLite-backed source store, retrieval, typed features, and normalized events. `provider.py` contains the opt-in TypeSafe client. `paging.py` owns native snapshots, review plans, and persisted active-view exclusions. `hooks.py` translates CLI hook envelopes. `mcp.py` and `http_api.py` expose distinct transports. Native JavaScript adapters call the same Python core through `bridge.mjs`.

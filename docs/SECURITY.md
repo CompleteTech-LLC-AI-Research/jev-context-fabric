@@ -6,6 +6,21 @@ This alpha is a **single-owner local developer tool**, not a multi-user memory s
 
 The OpenClaw adapter skips channel/sender/chat-identified contexts. This is a guardrail, not proof of comprehensive identity isolation on an unknown host. Do not expose this installation to untrusted gateway users. Separate OS accounts, isolated memory homes, and explicit principal-scoped storage would be needed before a multi-user deployment.
 
+### jev-bus registry
+
+The registry at `~/.jev/bus/v1/registry.json` (see [BUS.md](BUS.md)) names subprocesses this
+package will execute as chain stages. It is written under the same single-owner assumption as
+the rest of this installation: **anything that can write that file can cause this package to
+run the command it names.** That is the same trust level as the harness configuration files
+the installer already edits, and no lower, but it is a new file to keep inside the trusted
+boundary. It is written atomically under an exclusive-create lock, refuses symlinked paths,
+and is bounded at 256 KB; those are integrity guards, not authentication.
+
+A stage's stdout is parsed as data and its stderr is discarded, never surfaced, because it can
+carry local paths or provider diagnostics. A stage that fails contributes nothing rather than
+propagating an error into the host's turn. Retrieved evidence that passes through a chain is
+still wrapped as untrusted data, exactly as it is on every other path.
+
 ## Data handling
 
 Canonical source text is retained locally, including sensitive information present in captured tool results or messages. Source, backup, and SQLite files are not encrypted at rest. Unix modes are restrictive when files/directories are created; existing directory permissions and Windows ACLs remain the operator's responsibility. Use a private installation directory, disk encryption where appropriate, and the harness's native secrets/permission controls.

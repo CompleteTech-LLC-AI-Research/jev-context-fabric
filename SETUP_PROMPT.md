@@ -6,6 +6,12 @@ Determine the user's intended worktree and which harnesses are present. Run `pyt
 
 After the user-authorized installation, verify the real host loads the integration, check `jev_status` workspace, perform a nonsensitive capture/retrieve/hydrate test, and report which native lifecycle events actually fired. Do not label a host verified merely because its binary or config exists.
 
+If another jev-bus package (such as jev-prune-kit) is or will be installed, read
+[docs/BUS.md](docs/BUS.md) first. Report the `jev_bus` block from the dry run: which hosts this
+package will carry, which it defers on, and any carrier it would take over. Do not pass
+`--force-carrier` or `--no-bus` without the user explicitly asking; both change which package
+owns a host's hook. Installation order does not matter, so do not reinstall to influence it.
+
 Keep `/prune` separate from `/compact`. Preview candidates and require explicit local CLI approval. Do not invoke compact after a prune no-op, error, or insufficient savings. Do not promise to override the host's independent automatic context-pressure behavior; this package does not implement that control.
 
 Run the included Python tests and Node mock-adapter checks. Report actual test results and any untested live integrations. Preserve canonical sources and backups. Never include API keys, private source data, or a user's home directory contents in a bug report.

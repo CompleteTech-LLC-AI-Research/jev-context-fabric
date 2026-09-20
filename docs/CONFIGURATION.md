@@ -13,8 +13,21 @@
 | `--workspace PATH` | Pin generated MCP server processes to one existing worktree |
 | `--opencode-api auto\|v1\|v2` | Choose the matching separately implemented plugin API |
 | `--uninstall` | Guardedly restore external integration files using the receipt |
+| `--no-bus` | Do not participate in jev-bus; claim every hook this package supports, as in 0.1.0 |
+| `--force-carrier` | Take the OpenCode transform hook even if another jev-bus package currently carries it |
 
 Detection executes only `opencode --version` when available to select its plugin API, with a timeout. It does not download applications. `--all` is explicit configuration of absent targets, not evidence that they are installed.
+
+## jev-bus registry
+
+Coordination with another context-transforming package (see [BUS.md](BUS.md)) is recorded in
+`~/.jev/bus/v1/registry.json`, overridable with the **`JEV_BUS_HOME`** environment variable.
+The installer negotiates before it plans, so `--dry-run` prints the resulting `jev_bus` block
+without writing anything.
+
+The registry is additive metadata, **never a file-ownership claim**: `install-receipt.json`
+remains the sole record of which files this package owns. Uninstalling removes only this
+package's entries, and a vacated carrier slot is left empty rather than reassigned.
 
 ## Default external files
 
@@ -23,7 +36,7 @@ Detection executes only `opencode --version` when available to select its plugin
 | Claude Code | `~/.claude.json`; `~/.claude/settings.json`; `~/.claude/skills/jev-context/SKILL.md`; `~/.claude/commands/prune.md` |
 | Codex | `~/.codex/config.toml`; `~/.codex/hooks.json`; `~/.agents/skills/jev-context/SKILL.md` |
 | Hermes | `~/.hermes/config.yaml`; `~/.hermes/skills/jev-context/SKILL.md` |
-| OpenCode | one of `~/.config/opencode/opencode.json` or `opencode.jsonc`; V1 `plugins/jev-context.js`; `skills/jev-context/SKILL.md`; `commands/prune.md` |
+| OpenCode | one of `~/.config/opencode/opencode.json` or `opencode.jsonc`; V1 `plugins/jev-context.js`; `skills/jev-context/SKILL.md`; `commands/prune.md` **only when this package carries OpenCode on the bus** |
 | OpenClaw | `~/.openclaw/openclaw.json`; `~/.openclaw/skills/jev-context/SKILL.md` |
 | Gemini CLI | `~/.gemini/settings.json`; `~/.gemini/skills/jev-context/SKILL.md` |
 | Cursor | `~/.cursor/mcp.json`; `~/.cursor/skills/jev-context/SKILL.md` |
