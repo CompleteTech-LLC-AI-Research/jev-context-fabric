@@ -27,6 +27,7 @@ def parser():
     sub.add_parser("doctor")
     sub.add_parser("mcp")
     sub.add_parser("bridge")
+    sub.add_parser("bus-stage", help="Serve one jev-bus.stage.v1 request on stdin (carrier-invoked)")
     cap=sub.add_parser("capture")
     group=cap.add_mutually_exclusive_group(required=True)
     group.add_argument("--text"); group.add_argument("--file",type=Path)
@@ -79,6 +80,20 @@ def main(argv=None):
         if args.command=="serve-http":
             from .http_api import serve
             serve(args.home,str(Path(args.workspace).resolve()),args.port); return 0
+        if args.command=="bus-stage":
+            # A carrier in another package invoked us. Never break the host's turn: on any
+            # error, decline explicitly so the bus keeps this stage's input unchanged.
+            from . import bus
+            stage_core=None
+            try:
+                request=bus.read_stage_request()
+                stage_core=Core(args.home,request.get("workspace") or args.workspace)
+                print(canonical(paging.bus_stage(stage_core,request)))
+            except Exception as exc:
+                print(canonical({"ok":False,"error":type(exc).__name__,"message":str(exc)[:300]}))
+            finally:
+                if stage_core is not None: stage_core.close()
+            return 0
         core=Core(args.home,args.workspace)
         if args.command=="mcp":
             from .mcp import serve

@@ -1,5 +1,9 @@
 // V1 documented hooks. No compaction hook and no permission-policy mutation.
+// This package is the jev-bus CARRIER for OpenCode: it owns the message transform and
+// pipes the array through every registered stage in priority order, its own included.
 import { rpc } from "../bridge.mjs";
+import { runChain } from "../bus.mjs";
+const PACKAGE = "jev-context-fabric";
 export default async function JevContext({ directory }) {
   const queries = new Map();
   const sid = (input, output) => input?.sessionID || output?.messages?.[0]?.info?.sessionID;
@@ -26,10 +30,23 @@ export default async function JevContext({ directory }) {
     "experimental.chat.messages.transform": async (input, output) => {
       const session = sid(input, output);
       if (!session || !Array.isArray(output.messages)) return;
-      const result = await rpc(directory, "prepare", {
-        session, harness: "opencode-v1", messages: output.messages, query: queries.get(session) || "",
+      // acceptsSystemAppend is false: V1 injects evidence through its own system.transform
+      // hook above, so a stage returning one here would double-inject.
+      const { messages, notes } = await runChain("opencode", output.messages, {
+        session, workspace: directory, api: "v1",
+        goal: queries.get(session) || "", acceptsSystemAppend: false,
       });
-      if (Array.isArray(result?.messages)) output.messages = result.messages;
+      // The bus is ADDITIVE, never a prerequisite: if it contributed no stage of ours -- an
+      // unreadable registry, or plain standalone use -- fall back to this package's own
+      // direct prepare, exactly as before jev-bus existed.
+      if (!notes.some(n => String(n.stage || "").startsWith("jev-context."))) {
+        const result = await rpc(directory, "prepare", {
+          session, harness: "opencode-v1", messages: output.messages, query: queries.get(session) || "",
+        });
+        if (Array.isArray(result?.messages)) output.messages = result.messages;
+        return;
+      }
+      if (Array.isArray(messages)) output.messages = messages;
     },
     "tool.execute.before": async (input, output) => {
       if (String(input.tool || "").includes("jev_")) return;
@@ -41,3 +58,4 @@ export default async function JevContext({ directory }) {
     },
   };
 }
+export { PACKAGE };

@@ -14,6 +14,7 @@ from pathlib import Path
 from .config import DEFAULTS
 from .util import atomic_write, digest
 
+PACKAGE = "jev-context-fabric"
 HARNESSES = ("openclaw","hermes","opencode","codex","claude-code","gemini","cursor","copilot")
 BINARIES = {**{h:h for h in HARNESSES},"claude-code":"claude"}
 SKILL = """---
@@ -111,6 +112,20 @@ class Plan:
         self.report=[]
         self.runner=prefix/"runner.py"
         self.python=str(Path(sys.executable).absolute())
+        # Hosts whose transform hook this package owns. Set by bus negotiation before any
+        # harness branch runs, so a non-carrier never writes a competing command file.
+        self.carrying: set[str]=set()
+
+    def bus_stage(self):
+        """This package's jev-bus stage: it removes approved assistant prose and appends
+        retrieved evidence. Claims are disjoint from a read-dedup package's, which is what
+        lets both run in one chain."""
+        return {"name":"jev-context.view","priority":200,
+                "claims":["assistant-prose","message-remove","system-append"],
+                "hosts":["*"],
+                "transport":{"kind":"subprocess-json","argv":[
+                    self.python,str(self.runner),"--home",str(self.prefix),
+                    "--workspace","{workspace}","bus-stage"]}}
 
     def add(self, path: Path, data: bytes, purpose: str):
         path=path.absolute()
@@ -262,11 +277,15 @@ class Plan:
                 wrapper=f'export {{ default }} from {json.dumps(url)};\n'
                 self.owned_file(root/"plugins"/"jev-context.js",wrapper.encode())
             self.skill(root)
-            command=root/"commands"/"prune.md"
-            if command.exists() and command.read_text()!=PRUNE_COMMAND:
-                self.notes.append("Existing OpenCode /prune command retained; use jev_prune_plan directly")
-            else: self.owned_file(command,PRUNE_COMMAND.encode(),"command")
-            capabilities=["MCP",f"{opencode_api}-native-plugin","context-transform","explicit-prune-view"]
+            if "opencode" in self.carrying:
+                command=root/"commands"/"prune.md"
+                if command.exists() and command.read_text()!=PRUNE_COMMAND:
+                    self.notes.append("Existing OpenCode /prune command retained; use jev_prune_plan directly")
+                else: self.owned_file(command,PRUNE_COMMAND.encode(),"command")
+                capabilities=["MCP",f"{opencode_api}-native-plugin","context-transform","explicit-prune-view","jev-bus-carrier"]
+            else:
+                self.notes.append("Another jev-bus package carries OpenCode; no /prune command written and no competing transform installed. This package runs as a stage in that carrier's chain.")
+                capabilities=["MCP","jev-bus-stage","explicit-prune-view"]
         elif name=="openclaw":
             def change(d):
                 plugins=object_at(d,"plugins")
@@ -400,12 +419,21 @@ def main(package: Path,argv=None):
     p.add_argument("--workspace",type=Path,help="Optionally bind all installed MCP servers to one explicit worktree; native hooks still use their event cwd")
     p.add_argument("--uninstall",action="store_true")
     p.add_argument("--opencode-api",choices=["auto","v1","v2"],default="auto")
+    p.add_argument("--no-bus",action="store_true",help="Do not participate in jev-bus; own every hook this package supports, as in 0.1.0")
+    p.add_argument("--force-carrier",action="store_true",help="Take the OpenCode transform hook even if another jev-bus package currently carries it")
     args=p.parse_args(argv)
     home=(args.home or Path.home()).expanduser().absolute()
     prefix=(args.prefix or home/".jev-context-fabric").expanduser().absolute()
     try:
         if args.uninstall:
-            result=uninstall(prefix,args.dry_run); print(json.dumps(result,indent=2)); return 0 if result.get("uninstalled") else 2
+            result=uninstall(prefix,args.dry_run)
+            if not args.no_bus and not args.dry_run:
+                from . import bus
+                # Leave a vacated carrier slot empty rather than handing it to whoever is
+                # left: the remaining package must reinstall to take the hook deliberately.
+                try: result["jev_bus"]=bus.unregister(PACKAGE)
+                except bus.BusError as exc: result["jev_bus"]={"error":str(exc)}
+            print(json.dumps(result,indent=2)); return 0 if result.get("uninstalled") else 2
         roots=roots_for(home,args.home is None)
         detected={name:bool(shutil.which(BINARIES[name]) or roots[name].exists()) for name in HARNESSES}
         names=list(HARNESSES) if args.all else args.harness or [n for n in HARNESSES if detected[n]]
@@ -422,6 +450,28 @@ def main(package: Path,argv=None):
                 except (OSError,subprocess.TimeoutExpired): pass
         plan=Plan(package,home,prefix,args.workspace)
         plan.base()
+        bus_report=None
+        if args.no_bus:
+            # Legacy standalone behaviour: own everything, coordinate with nobody.
+            plan.carrying={"opencode"}
+            plan.notes.append("--no-bus: this package claims every hook it supports. If another jev-bus package is installed for the same host, both will register a transform and a /prune.")
+        else:
+            from . import bus
+            carriers={}
+            if "opencode" in names:
+                carriers["opencode"]={"rank":bus.carrier_rank(PACKAGE,"opencode"),"api":api,"root":str(roots["opencode"])}
+            try:
+                bus_report=bus.register(PACKAGE,[plan.bus_stage()],carriers,
+                                        force_carrier=args.force_carrier,dry_run=args.dry_run)
+                plan.carrying=set(bus_report["carrier_of"])
+                for host,holder in bus_report["deferred_to"].items():
+                    plan.notes.append(f"jev-bus: {holder} carries {host}; this package installs as a stage there, not as a second transform.")
+                for host,previous in bus_report["took_over"].items():
+                    # Its stage entry is already in the registry, and its adapter reads the
+                    # carrier at load time, so a host restart is all that is needed.
+                    plan.notes.append(f"jev-bus: took the {host} carrier slot from {previous}, which ranks lower there. Restart {host} so that package's adapter re-reads the registry and steps down to a stage.")
+            except bus.BusError as exc:
+                raise Conflict(f"jev-bus refused this installation: {exc}") from exc
         for name in names:
             plan.install_harness(name,roots,api)
             plan.report[-1]["detected"]=detected[name]
@@ -431,6 +481,8 @@ def main(package: Path,argv=None):
         plan.notes.extend(["No harness applications were downloaded. Restart harness sessions after installation.",
             "Native compaction and permission policies are not replaced. Live host loading must be verified separately."])
         result={"dry_run":True,**plan.preview()} if args.dry_run else plan.commit()
+        if bus_report is not None:
+            result["jev_bus"]={**bus_report,"registry":str(__import__("jev_context.bus",fromlist=["x"]).registry_path())}
         print(json.dumps(result,indent=2))
         return 0
     except Exception as exc:

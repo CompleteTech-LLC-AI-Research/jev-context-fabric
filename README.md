@@ -11,10 +11,10 @@ Nothing is summarized away. Nothing leaves the machine unless you say so.
 [![status](https://img.shields.io/badge/status-alpha-d29922?style=flat-square)](#what-this-is--and-is-not)
 [![python](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#quick-start)
 [![dependencies](https://img.shields.io/badge/pip_dependencies-none-2da44e?style=flat-square)](#quick-start)
-[![tests](https://img.shields.io/badge/tests-69_py_%2F_19_node-2da44e?style=flat-square)](TEST_REPORT.md)
+[![tests](https://img.shields.io/badge/tests-109_py_%2F_19_node-2da44e?style=flat-square)](TEST_REPORT.md)
 [![license](https://img.shields.io/badge/license-MIT-8250df?style=flat-square)](LICENSE)
 
-[Quick start](#quick-start) · [How it works](#how-it-works) · [Integrations](#integrations) · [CLI](#the-cli) · [`/prune`](#prune-is-not-compact) · [Safety](#safety-and-uninstall) · [Docs](docs/)
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Integrations](#integrations) · [CLI](#the-cli) · [`/prune`](#prune-is-not-compact) · [Coexistence](#coexisting-with-jev-prune-kit) · [Safety](#safety-and-uninstall) · [Docs](docs/)
 
 </div>
 
@@ -155,14 +155,15 @@ Implemented surfaces — not a claim that every feature has been exercised in a 
 | Target | Installed entry points | Active pruning |
 |:--|:--|:--|
 | **OpenClaw** | Local native plugin · authorized prompt enrichment · tool/result capture · native memory tools | — *retrieval/capture only* |
-| **Hermes** | MCP · shell lifecycle hooks · per-user-turn retrieval · skill file | — *preview reports unsupported* |
-| **OpenCode V1** | MCP · native message/system transforms · prompt/tool hooks · `/prune` preview | ✅ persisted active-message view |
-| **OpenCode V2** | MCP · `context` + `execute.after` plugin hooks · `/prune` preview | ✅ persisted active-message view |
+| **Hermes** | MCP · shell lifecycle hooks · per-user-turn retrieval · skill file | ✅ *only* as a [jev-bus](#coexisting-with-jev-prune-kit) stage |
+| **OpenCode V1** | MCP · native message/system transforms · prompt/tool hooks · `/prune` preview · **jev-bus carrier** | ✅ persisted active-message view |
+| **OpenCode V2** | MCP · `context` + `execute.after` plugin hooks · `/prune` preview · **jev-bus carrier** | ✅ persisted active-message view |
 | **Codex** | MCP · `SessionStart` · `UserPromptSubmit` · tool and stop hooks · skill file | — *preview reports unsupported* |
 | **Claude Code** | MCP · session/prompt/tool/stop hooks · skill · `/prune` preview | — *preview reports unsupported* |
 | **Gemini CLI** | MCP · skill file | — *no lifecycle capture* |
 | **Cursor** | MCP · skill file | — *no lifecycle capture* |
 | **Copilot CLI** | MCP · skill file | — *no lifecycle capture* |
+| **Pi** | — *no adapter of its own* | ✅ *only* as a [jev-bus](#coexisting-with-jev-prune-kit) stage |
 | *Any other agent* | Generic MCP template · stdio JSON bridge · loopback API · example adapter | Bridge can return an approved view; the caller must use it |
 
 OpenCode defaults to **V1** when no installed version is detectable. Select the separately implemented V2 API with `--opencode-api v2`. Switching families requires removing the previous integration first, so two loaders are never installed at once.
@@ -307,6 +308,63 @@ Approved exclusions persist in SQLite and are re-applied on supported model-cont
 
 ---
 
+## Coexisting with `jev-prune-kit`
+
+[`jev-prune-kit`](https://github.com/CompleteTech-LLC-AI-Research/jev-prune-kit) prunes the
+*other half* of a transcript: it substitutes **duplicate file-read result bodies**, where this
+package removes **old assistant prose**. Disjoint work, and genuinely complementary — but both
+wanted OpenCode's `experimental.chat.messages.transform` and both wanted `/prune`.
+
+**jev-bus** settles that: one **carrier** per host owns the hook, every other package runs as
+an ordered **stage** inside it.
+
+```
+OpenCode ── carrier: jev-context-fabric (this package: V1 + V2)
+Pi       ── carrier: jev-prune-kit      (sole Pi adapter)
+Hermes   ── carrier: jev-prune-kit      (real request middleware)
+
+  the chain, in every carrier:
+    100  jev-prune.dedup    claims tool-result:read
+    200  jev-context.view   claims assistant-prose, message-remove, system-append
+```
+
+Each stage declares the message classes it may touch. **Two packages claiming overlapping
+classes on one host is a hard install failure** — double-registration becomes impossible
+rather than merely discouraged. Carrier slots go by a rank table both packages carry, so the
+assignment is the same whichever you install first.
+
+Order is load-bearing: this package keys messages as `sha256([index, message])`, so dedup
+must run first — it substitutes bodies in place without changing the array length, and never
+touches the prose this package owns.
+
+**What each side gains.** This package reaches **Pi and Hermes**, where it has no adapter of
+its own; `jev-prune-kit` reaches **OpenCode V2**, which it does not implement. Nothing changes
+for OpenClaw, Codex, Claude Code, Gemini, Cursor or Copilot — those hosts expose no
+outgoing-request transform at all, so neither package can project there, with or without the
+bus. Both still install MCP, skills and capture in all of them.
+
+Install both in either order; no flags needed. `install.py` reports what it took and what it
+deferred:
+
+```bash
+python3 install.py --all --dry-run        # prints the jev_bus block before writing anything
+python3 install.py --all --no-bus         # opt out; restores standalone 0.1.0 behaviour
+python3 install.py --all --force-carrier  # take OpenCode from whoever currently holds it
+```
+
+> [!NOTE]
+> **The bus is additive, never a prerequisite.** A stage that errors, times out or returns an
+> unrecognized shape contributes nothing and the chain continues with that stage's own input;
+> if the chain contributes no stage of this package at all, the adapter falls back to its own
+> direct transform exactly as before jev-bus existed. It approves nothing either — `/prune`
+> shows a combined, package-attributed preview, and approval stays in each package's own CLI.
+> Joining a chain never starts a paid call.
+
+The full contract, including the wire format and the vendored-file hashes, is
+[`docs/BUS.md`](docs/BUS.md) — byte-identical in both repositories.
+
+---
+
 ## Safety and uninstall
 
 The installer previews changes, writes restrictive-permission backups where the OS supports them, writes atomically, records hashes and ownership, detects concurrent edits, and rolls back ordinary write failures. Reinstalling an unchanged configuration is idempotent and changes zero files.
@@ -332,7 +390,7 @@ Alternative roots — `--home`, `--prefix`, `CODEX_HOME`, `HERMES_HOME`, `OPENCL
 Not one of the eight? `generic-mcp.json` is generated in the installed home with real interpreter and runner paths. Merge its MCP entry into your client after verifying that client's schema — no universal config format is assumed beyond the eight explicit installers.
 
 ```bash
-python3 -m unittest discover -s tests -v   # 69 Python tests
+python3 -m unittest discover -s tests -v   # 109 Python tests
 node tests/adapters.mjs                    # 19 mock-host adapter checks
 python3 examples/demo.py                   # capture → retrieve → prune, in a temp dir
 python3 verify_release.py                  # manifest integrity
@@ -347,6 +405,7 @@ No live TypeSafe call and no harness execution occurs in any of these. The teste
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The bridge, the loopback API, extension contract |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Trust model and operational limits |
 | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Every switch, root, and installed file |
+| [`docs/BUS.md`](docs/BUS.md) | The jev-bus contract shared with `jev-prune-kit` |
 | [`docs/VERIFIED_INTERFACES.md`](docs/VERIFIED_INTERFACES.md) | Which host interfaces were checked, and how |
 | [`SETUP_PROMPT.md`](SETUP_PROMPT.md) | A prompt for letting a local agent install this safely |
 

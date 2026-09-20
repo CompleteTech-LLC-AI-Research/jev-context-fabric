@@ -6,7 +6,7 @@ Date: September 20, 2026.
 
 | Check | Result |
 |---|---|
-| Python standard-library unittest suite | **69 passed; 0 failed** |
+| Python standard-library unittest suite | **109 passed; 0 failed** (69 original + 32 jev-bus contract + 8 cross-package) |
 | Native JavaScript mock-host checks | **19 passed; 0 failed** |
 | Python syntax validation | 18 original-code/test/example files passed |
 | JavaScript syntax validation | 5 module files passed |
@@ -15,6 +15,33 @@ Date: September 20, 2026.
 | ZIP extraction, integrity verification, and clean-home installation | Passed: extracted checksums, no-write dry run, all-target install, zero-change reinstall, installed MCP capture/retrieve, guarded uninstall |
 
 Runtime: Python 3.13.5, Node v22.16.0, Linux. The final Python suite was also run with `-S`, disabling site-package initialization. Vendor parsers were loaded from the package. No pip/network installation was required.
+
+## jev-bus coordination (added after the original run)
+
+`docs/BUS.md` specifies the contract this package shares with `jev-prune-kit`. It is covered by
+`tests/test_bus.py` (32 checks) and `tests/test_bus_integration.py` (8 checks).
+
+The unit checks cover the closed claim vocabulary and wildcard subsumption, cross-package claim
+conflict as a hard failure, install-order-independent carrier assignment by rank, deferral,
+forced takeover, tie-keeps-incumbent, refusal of a carrier claim for a host with no transform
+API, dry-run reporting without writes, idempotent re-registration, uninstall vacating a slot
+without reassigning it, priority-then-name chain order, every stage receiving the pristine
+`original_messages`, and passthrough on a stage that errors, declines, returns a malformed
+shape, hits a claim conflict or meets an unreadable registry. They also check that this package
+claims Pi/Hermes support **only** when actually registered on the bus, never merely because it
+knows the host name.
+
+The integration checks run **both packages as real subprocesses** in one chain: the rank table
+settling OpenCode, both stages running in order, a duplicate read body substituted without
+changing the array length, this package's `msg_` keys surviving that upstream substitution,
+evidence appended only when the carrier accepts it, `plan` mutating nothing, and a deliberately
+killed dedup stage leaving the active-view stage still working. They skip unless a
+`jev-prune-kit` checkout is found; set `JEV_PRUNE_KIT` to point at one.
+
+**Environment note.** The counts above are from the reference Linux runtime below. On Windows
+with Python 3.14, this suite reports one pre-existing failure (`test_symlink_output_refused`)
+and the Node adapter suite does not complete; both behave identically on the unmodified 0.1.0
+tree, so they are environmental, not regressions. The jev-bus checks pass on both.
 
 ## Coverage
 
@@ -39,7 +66,7 @@ The PowerShell/Windows and macOS wrappers are provided but were not executed on 
 ## Reproduce
 
 ```bash
-python3 -S -m unittest discover -s tests -v
+python3 -S -m unittest discover -s tests -v   # set JEV_PRUNE_KIT to include the cross-package checks
 node tests/adapters.mjs
 python3 -S examples/demo.py
 python3 verify_release.py

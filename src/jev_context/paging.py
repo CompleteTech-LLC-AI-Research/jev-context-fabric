@@ -6,7 +6,26 @@ import re
 import time
 from .util import canonical, digest, bounded_int, redact
 
+# Hosts this package can mutate through an adapter it installs itself.
 SUPPORTED_MUTATORS = {"generic", "opencode-v1", "opencode-v2"}
+
+# Hosts this package can mutate ONLY as a jev-bus stage inside another package's carrier.
+# It installs no native transform of its own for either, so support here is conditional on
+# actually being registered on the bus -- never claimed merely because the name is known.
+BUS_ONLY_MUTATORS = {"pi", "hermes"}
+PACKAGE = "jev-context-fabric"
+
+
+def can_mutate(harness: str) -> bool:
+    if harness in SUPPORTED_MUTATORS:
+        return True
+    if harness not in BUS_ONLY_MUTATORS:
+        return False
+    try:
+        from . import bus
+        return any(stage.get("package") == PACKAGE for stage in bus.stages_for(harness))
+    except Exception:  # noqa: BLE001 - an unreadable registry means no capability, not a crash
+        return False
 
 
 def message_key(message: dict, index: int = 0) -> str:
@@ -55,10 +74,14 @@ def snapshot(core, session: str, harness: str, messages: list[dict]) -> dict:
 
 def plan(core, session: str, harness: str, goal: str, target_chars: int = 12000) -> dict:
     bounded_int(target_chars, "target_chars", 1, 2_000_000)
-    if harness not in SUPPORTED_MUTATORS:
+    if not can_mutate(harness):
+        reason = ("This adapter cannot replace the active message view. Retrieval and capture remain available.")
+        if harness in BUS_ONLY_MUTATORS:
+            reason = (f"This package installs no native transform for {harness}; it can only prune there as a "
+                      f"jev-bus stage, and it is not registered on the bus for that host. Install the package "
+                      f"that carries {harness}, then reinstall this one.")
         return {"supported": False, "harness": harness, "applied": False,
-                "reason": "This adapter cannot replace the active message view. Retrieval and capture remain available.",
-                "native_compaction_called": False}
+                "reason": reason, "native_compaction_called": False}
     row = core.store.db.execute("SELECT * FROM snapshots WHERE workspace=? AND session=? AND harness=?", (core.workspace,session,harness)).fetchone()
     if not row:
         raise ValueError("No snapshot for this session. Start the harness or submit a generic prepare request first.")
@@ -122,11 +145,26 @@ def apply(core, plan_id: str) -> dict:
             "note":"The next supported context-transform hook applies this view. Canonical sources are unchanged."}
 
 
-def prepare(core, session: str, harness: str, messages: list[dict], query: str = "") -> dict:
+def prepare(core, session: str, harness: str, messages: list[dict], query: str = "",
+            original_messages: list[dict] | None = None) -> dict:
+    """Filter `messages` using the approved active view.
+
+    When another jev-bus stage ran earlier in the chain, `messages` may already differ from
+    what the host holds. `original_messages` is then the pristine pre-chain array, and both
+    the snapshot fingerprint and every `msg_` key derive from IT, not from the mutated copy.
+    Without that, an upstream edit would re-key every message and silently stale every open
+    plan. Keys stay aligned because a stage may not change the array length: an upstream
+    stage claiming `message-remove` would collide with this package's own claim and be
+    refused at install time. If the lengths disagree anyway, fall back to keying off the
+    array actually being filtered, which can only under-remove.
+    """
     if not core.config["capture_enabled"]:
         return {"messages":messages,"removed":0,"native_compaction_called":False,
                 "note":"Automatic capture is disabled; no snapshot or active-view mutation performed"}
-    snap = snapshot(core,session,harness,messages)
+    aligned = (isinstance(original_messages, list) and len(original_messages) == len(messages)
+               and all(isinstance(m, dict) for m in original_messages))
+    pristine = original_messages if aligned else messages
+    snap = snapshot(core,session,harness,pristine)
     row = core.store.db.execute("SELECT excluded FROM views WHERE workspace=? AND session=? AND harness=?", (core.workspace,session,harness)).fetchone()
     excluded = set(json.loads(row[0])) if row and core.config["native_prune_enabled"] else set()
     # Defensive re-check on every request; a changed role or tool block cannot be removed.
@@ -135,14 +173,71 @@ def prepare(core, session: str, harness: str, messages: list[dict], query: str =
     guard = re.compile(r"\b(must|never|constraint|requirement|unresolved|blocker|security|permission|decision)\b|do not|don't", re.I)
     kept = []
     for index, message in enumerate(messages):
-        key = message_key(message, index)
-        text = plain_assistant_text(message)
+        source = pristine[index]
+        key = message_key(source, index)
+        text = plain_assistant_text(source)
         eligible = (index < len(messages)-recent and text is not None and not guard.search(text)
                     and "native-message:" + key not in pins)
         if not (key in excluded and eligible):
             kept.append(message)
     return {"messages":kept,"removed":len(messages)-len(kept),"fingerprint":snap["fingerprint"],
-            "native_compaction_called":False}
+            "keyed_from":"original" if aligned else "current","native_compaction_called":False}
+
+
+def harness_for_host(host: str, api: str = "") -> str:
+    """Map a jev-bus host name onto this package's harness string."""
+    if host == "opencode":
+        return "opencode-v2" if str(api).lower() in ("v2", "2") else "opencode-v1"
+    return host if host in (SUPPORTED_MUTATORS | BUS_ONLY_MUTATORS) else "generic"
+
+
+def bus_stage(core, request: dict) -> dict:
+    """Serve one jev-bus.stage.v1 request.
+
+    This package's stage claims `assistant-prose`, `message-remove` and `system-append`.
+    It never approves anything: `transform` applies only an ALREADY-approved active view,
+    and `plan` is a preview. Approval stays in this package's own CLI.
+    """
+    host = str(request.get("host", "generic"))
+    harness = harness_for_host(host, str(request.get("api", "")))
+    session = str(request.get("session") or "")
+    messages = request["messages"]
+    if not session:
+        return {"ok": True, "messages": messages,
+                "notes": [{"action": "passthrough", "detail": "no session id supplied"}]}
+
+    if request["op"] == "plan":
+        snapshot(core, session, harness, request.get("original_messages") or messages)
+        preview = plan(core, session, harness, str(request.get("goal") or ""),
+                       int(core.config["max_evidence_chars"]))
+        if not preview.get("supported"):
+            return {"ok": True, "messages": messages,
+                    "notes": [{"action": "unsupported", "detail": preview.get("reason", "")}]}
+        return {"ok": True, "messages": messages, "plan_id": preview["plan_id"],
+                "notes": [{"action": "assistant-prose eligible", "count": len(preview["candidates"]),
+                           "bytes": preview["estimated_removed_characters"],
+                           "detail": f"assistant-prose messages (approve: prune-apply {preview['plan_id']} --enable-native)"}]}
+
+    result = prepare(core, session, harness, messages, str(request.get("goal") or ""),
+                     request.get("original_messages"))
+    notes = []
+    if result["removed"]:
+        notes.append({"action": "assistant-prose removed", "count": result["removed"],
+                      "detail": "excluded from the active view; canonical sources unchanged"})
+    if result.get("note"):
+        notes.append({"action": "passthrough", "detail": result["note"]})
+    response = {"ok": True, "messages": result["messages"], "notes": notes}
+    # Evidence injection is the `system-append` claim. A carrier that has no system array in
+    # this hook, or that already injects evidence through a separate hook of its own, sets
+    # accepts_system_append false; we then return none rather than smuggling it into the
+    # message list, which would double-inject and would also exceed this stage's claims.
+    if core.config["inject_enabled"] and request.get("accepts_system_append") is not False:
+        pack = core.retrieve(str(request.get("goal") or ""), core.config["max_evidence_chars"], False)
+        if pack["context"]:
+            response["system_append"] = pack["context"]
+            notes.append({"action": "evidence appended", "count": len(pack["evidence"]),
+                          "bytes": pack["characters"], "detail": "retrieved sources (untrusted data)"})
+    return response
 
 
 def reset(core, session: str, harness: str) -> dict:
