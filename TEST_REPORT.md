@@ -1,0 +1,48 @@
+# Test report — JEV Context Fabric 0.1.0
+
+Date: September 20, 2026.
+
+## Executed results
+
+| Check | Result |
+|---|---|
+| Python standard-library unittest suite | **69 passed; 0 failed** |
+| Native JavaScript mock-host checks | **19 passed; 0 failed** |
+| Python syntax validation | 18 original-code/test/example files passed |
+| JavaScript syntax validation | 5 module files passed |
+| Offline bootstrap with `python -S` | Passed; all eight integration targets configured without site packages |
+| Repeated all-target installation | Passed; second install changed zero files |
+| ZIP extraction, integrity verification, and clean-home installation | Passed: extracted checksums, no-write dry run, all-target install, zero-change reinstall, installed MCP capture/retrieve, guarded uninstall |
+
+Runtime: Python 3.13.5, Node v22.16.0, Linux. The final Python suite was also run with `-S`, disabling site-package initialization. Vendor parsers were loaded from the package. No pip/network installation was required.
+
+## Coverage
+
+The Python suite exercises source hashes and exact captured Unicode/newline round trips, deduplication, worktree isolation, local redaction and CLI-only raw access, evidence budgets, pins, SQLite persistence, FTS query escaping/fallback, cached typed-role routing, explicitly linked-source retrieval, no-network defaults, and disabled automatic capture.
+
+Prune tests cover unchanged defaults, unsupported harnesses, CLI approval, stale plans, preserved user/system/recent/tool/thinking/media messages, duplicate message identity, pinning after approval, repeated plans, durable active views, reset, and no compaction fallback.
+
+Installer tests cover all-target generation, idempotence, unrelated JSON values, TOML/YAML comments, existing disabled-hook/deny policies, server-name collisions, malformed configs, symlinks, concurrent config edits, rollback after an injected write failure, byte-exact original restoration, removal of the external OpenCode loader, guarded uninstall conflicts, repeated uninstall/reinstall, explicit MCP workspace binding, and separate V1/V2 registration.
+
+Protocol tests include an actual subprocess MCP initialize/capture/retrieve exchange, schema errors, notifications and stdout framing. Loopback HTTP tests use a real local server and check bearer authentication, Host/Origin rejection, raw hydration restrictions, and blocked remote/prune-apply endpoints. TypeSafe tests mock the HTTP response and validate request format, redaction, ontology keys, complete probability distributions, missing key/consent, and redirect rejection.
+
+The Node suite exercises the real JavaScript-to-Python subprocess bridge and SQLite core under mock OpenCode V1, OpenCode V2, and OpenClaw hook registries. It confirms approved OpenCode views are re-applied to subsequent model inputs, and OpenClaw enrichment is withheld without finalized memory-tool permission or for identified channel contexts.
+
+## Explicitly not tested
+
+**No actual OpenClaw, Hermes, OpenCode, Codex, Claude Code, Gemini CLI, Cursor, or Copilot CLI process was launched.** Native plugin loading, version-specific event schemas, host consent screens, actual reasoning-model context consumption, and custom profile behavior still require local smoke tests. A mock passing does not certify those properties.
+
+**No live TypeSafe request was made.** Credentials, authenticated model availability, network latency, billing, accuracy, calibration, evidence recall, and task-quality/token-reduction benchmarks are unmeasured. Character counts in the synthetic demo are not model-token savings.
+
+The PowerShell/Windows and macOS wrappers are provided but were not executed on those operating systems. No hard-crash recovery, production multi-user security audit, pressure-trigger interception, or large-scale concurrency benchmark was run.
+
+## Reproduce
+
+```bash
+python3 -S -m unittest discover -s tests -v
+node tests/adapters.mjs
+python3 -S examples/demo.py
+python3 verify_release.py
+```
+
+Machine-readable results: `tests/results/summary.json`. Raw successful logs: `tests/results/python-unittest.txt` and `tests/results/node-adapter-checks.txt`. The release manifest checks file integrity, not publisher authenticity.

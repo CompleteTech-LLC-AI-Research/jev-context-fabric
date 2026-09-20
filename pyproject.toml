@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jev-context-fabric"
+version = "0.1.0"
+description = "Local source-backed memory and explicit semantic paging for agent harnesses"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+jev-context = "jev_context.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

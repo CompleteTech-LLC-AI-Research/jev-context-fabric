@@ -1,0 +1,20 @@
+PASS bridge stores Unicode source
+PASS bridge preserves Unicode across process boundary
+PASS bridge fails open for missing workspace
+PASS OpenCode V1 registers no compaction hook
+PASS OpenCode V1 returns source evidence
+PASS OpenCode V1 does not prune without approval
+PASS OpenCode V1 applies approved persisted view
+PASS OpenCode V1 re-applies same view on next model call
+PASS OpenCode V2 separate context hook only
+PASS OpenCode V2 source-backed system addition
+PASS OpenCode V2 approved active-view mutation
+PASS OpenCode V2 tool hook captures result
+PASS OpenClaw registration is synchronous
+PASS OpenClaw enrichment requires finalized tool authority
+PASS OpenClaw authorized prompt evidence returned
+PASS OpenClaw denied memory permission not bypassed
+PASS OpenClaw channel memory sharing disabled
+PASS OpenClaw native compact prompt skipped
+PASS OpenClaw native memory tool bridge
+{"passed":19,"failed":0,"live_harnesses_tested":false}

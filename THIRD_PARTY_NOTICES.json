@@ -1,0 +1,20 @@
+[
+  {
+    "name": "json5",
+    "version": "0.14.0",
+    "license": "See the complete license under licenses/json5/",
+    "purpose": "Offline installer configuration parser; core runtime does not depend on this package"
+  },
+  {
+    "name": "tomlkit",
+    "version": "0.13.3",
+    "license": "MIT",
+    "purpose": "Offline installer configuration parser; core runtime does not depend on this package"
+  },
+  {
+    "name": "ruamel.yaml",
+    "version": "0.18.17",
+    "license": "MIT",
+    "purpose": "Offline installer configuration parser; core runtime does not depend on this package"
+  }
+]

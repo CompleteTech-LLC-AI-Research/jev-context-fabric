@@ -1,0 +1,25 @@
+{
+  "date": "2026-09-20",
+  "python": "3.13.5",
+  "node": "v22.16.0",
+  "platform": "Linux",
+  "python_tests": 69,
+  "python_failures": 0,
+  "node_mock_checks": 19,
+  "node_failures": 0,
+  "python_syntax_files": 18,
+  "javascript_syntax_files": 5,
+  "live_harnesses_tested": [],
+  "live_typesafe_calls": 0,
+  "site_packages_disabled_install": "passed",
+  "tested_platforms": [
+    "Linux"
+  ],
+  "provided_but_untested_platforms": [
+    "Windows",
+    "macOS"
+  ],
+  "zip_smoke": "Passed: extracted checksums, no-write dry run, all-target install, zero-change reinstall, installed MCP capture/retrieve, guarded uninstall",
+  "zip_install_changed_files": 46,
+  "zip_reinstall_changed_files": 0
+}
