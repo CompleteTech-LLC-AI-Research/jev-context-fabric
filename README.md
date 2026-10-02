@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/banner.jpg" alt="A woven constellation of blue and teal threads with crystalline memory nodes and an amber beam pulling excerpts from the weave." width="100%"></p>
+
 <div align="center">
 
 # JEV Context Fabric
